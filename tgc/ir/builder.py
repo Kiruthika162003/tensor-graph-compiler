@@ -250,3 +250,28 @@ def layernorm_graph(rows: int | str = 8, columns: int = 32, epsilon: float = 1e-
     eps = builder.constant(epsilon)
     denominator = builder.sqrt(builder.add(variance, eps))
     return builder.finish(builder.div(centred, denominator))
+
+
+def branching_graph(branches: int = 4, depth: int = 3, width: int = 64) -> Graph:
+    """One input feeding several independent chains that rejoin at the end.
+
+    The fixture that separates execution order from buffer allocation. Running the branches
+    one at a time keeps one chain alive; running them in lockstep keeps all of them alive,
+    and no allocator can recover the difference because the values genuinely overlap.
+    """
+    if branches < 1 or depth < 1:
+        raise ConfigError("a branching graph needs at least one branch of depth one")
+    builder = Builder()
+    x = builder.input([width, width], name="x")
+
+    tails = []
+    for _ in range(branches):
+        current = builder.relu(x)
+        for _ in range(depth - 1):
+            current = builder.tanh(current)
+        tails.append(current)
+
+    joined = tails[0]
+    for tail in tails[1:]:
+        joined = builder.add(joined, tail)
+    return builder.finish(joined)
