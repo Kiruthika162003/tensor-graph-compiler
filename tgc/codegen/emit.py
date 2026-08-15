@@ -25,6 +25,10 @@ from tgc.verify.reference import to_torch
 HEADER = """import torch
 
 
+def _step(source):
+    return (source > 0).to(source.dtype)
+
+
 def compiled(arena, inputs):
 """
 
@@ -47,6 +51,7 @@ UNARY = {
     "sigmoid": "torch.sigmoid",
     "reciprocal": "torch.reciprocal",
     "abs": "torch.abs",
+    "step": "_step",
 }
 
 

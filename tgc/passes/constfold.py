@@ -58,6 +58,7 @@ UNARY_FOLDS = {
     "relu": lambda x: max(0.0, x),
     "sigmoid": lambda x: 1.0 / (1.0 + math.exp(-x)),
     "reciprocal": lambda x: 1.0 / x,
+    "step": lambda x: 1.0 if x > 0 else 0.0,
 }
 
 BINARY_FOLDS = {

@@ -58,6 +58,7 @@ UNARY = {
     "sigmoid": torch.sigmoid,
     "reciprocal": torch.reciprocal,
     "abs": torch.abs,
+    "step": lambda source: (source > 0).to(source.dtype),
 }
 
 BINARY = {

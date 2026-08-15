@@ -112,6 +112,10 @@ class Builder:
         """Elementwise inverse."""
         return self.apply(ops.RECIPROCAL, name)
 
+    def step(self, name: str) -> str:
+        """One where the input is positive, zero elsewhere."""
+        return self.apply(ops.STEP, name)
+
     def cast(self, name: str, dtype: DType) -> str:
         """Change element type."""
         return self.apply(ops.CAST, name, dtype=dtype)
@@ -150,6 +154,19 @@ class Builder:
             raise GraphError(f"cannot return {name!r}, which is not defined")
         self.outputs.append(name)
         return name
+
+    def shape_of(self, name: str) -> Shape:
+        """The shape a value already has.
+
+        Needed by anything that builds a graph from another one and has to know what it just
+        emitted, which in practice means differentiation: a cotangent has to be summed back to
+        the operand's shape and there is no way to know from where to without asking.
+        """
+        return self._lookup(name).shape
+
+    def dtype_of(self, name: str) -> DType:
+        """The type a value already has."""
+        return self._lookup(name).dtype
 
     def finish(self, *names: str) -> Graph:
         """Produce a validated graph."""

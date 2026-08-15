@@ -99,6 +99,12 @@ RECIPROCAL = Op(name="reciprocal", category=ELEMENTWISE)
 ABS = Op(name="abs", category=ELEMENTWISE)
 CAST = Op(name="cast", category=ELEMENTWISE)
 
+# One where the input is positive and zero everywhere else. Nothing a person writes uses this,
+# and reverse mode needs it for every operation with a corner: relu, abs, maximum and the max
+# reduction all differentiate into an indicator, and without an op for it the gradient of a
+# relu has to be spelled as a division that is nan at exactly the point the corner sits.
+STEP = Op(name="step", category=ELEMENTWISE)
+
 SUM = Op(name="sum", category=REDUCTION)
 MAX = Op(name="max", category=REDUCTION)
 MEAN = Op(name="mean", category=REDUCTION)
@@ -132,6 +138,7 @@ ALL_OPS = (
     RECIPROCAL,
     ABS,
     CAST,
+    STEP,
     SUM,
     MAX,
     MEAN,
@@ -200,6 +207,7 @@ COSTS: dict[str, OpCost] = {
     "tanh": OpCost(flops_per_element=12.0, transcendental=True),
     "sigmoid": OpCost(flops_per_element=10.0, transcendental=True),
     "cast": OpCost(flops_per_element=0.5),
+    "step": OpCost(flops_per_element=1.0),
     "sum": OpCost(flops_per_element=1.0),
     "mean": OpCost(flops_per_element=1.0),
     "max": OpCost(flops_per_element=1.0),
