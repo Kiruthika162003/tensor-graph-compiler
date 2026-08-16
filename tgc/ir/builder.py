@@ -148,6 +148,14 @@ class Builder:
         """Expand a tensor against a larger shape."""
         return self.apply(ops.BROADCAST_TO, name, shape=shape(*sizes))
 
+    def concat(self, left: str, right: str, axis: int = 0) -> str:
+        """Join two tensors along one axis."""
+        return self.apply(ops.CONCAT, left, right, axis=int(axis))
+
+    def slice(self, name: str, axis: int, start: int, length: int) -> str:
+        """Take a window out of one axis."""
+        return self.apply(ops.SLICE, name, axis=int(axis), start=int(start), length=int(length))
+
     def emit(self, name: str) -> str:
         """Record a value the caller wants back."""
         if name not in self._defined():

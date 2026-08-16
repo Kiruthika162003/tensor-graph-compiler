@@ -93,6 +93,16 @@ def evaluate_node(node: Node, operands: Sequence[torch.Tensor]) -> torch.Tensor:
         return operands[0].reshape(tuple(node.attrs["sizes"]))
     if name == "transpose":
         return operands[0].permute(tuple(node.attrs["permutation"]))
+    if name == "concat":
+        return torch.cat([operands[0], operands[1]], dim=int(node.attrs["axis"]))
+    if name == "slice":
+        return (
+            operands[0]
+            .narrow(
+                int(node.attrs["axis"]), int(node.attrs["start"]), int(node.attrs["length"])
+            )
+            .contiguous()
+        )
     if name == "broadcast_to":
         return operands[0].broadcast_to(_static_sizes(node)).contiguous()
     if name == "constant":

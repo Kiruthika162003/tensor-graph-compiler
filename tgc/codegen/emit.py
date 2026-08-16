@@ -127,6 +127,14 @@ def statement_for(node: Node, buffers: dict[str, str]) -> str:
     if name == "transpose":
         permutation = ", ".join(str(axis) for axis in node.attrs["permutation"])
         return f"    {target}.copy_({operands[0]}.permute({permutation}))"
+    if name == "concat":
+        axis = int(node.attrs["axis"])
+        return f"    {target}.copy_(torch.cat([{operands[0]}, {operands[1]}], dim={axis}))"
+    if name == "slice":
+        axis = int(node.attrs["axis"])
+        start = int(node.attrs["start"])
+        length = int(node.attrs["length"])
+        return f"    {target}.copy_({operands[0]}.narrow({axis}, {start}, {length}))"
     if name == "broadcast_to":
         sizes = ", ".join(str(size) for size in static_sizes(node))
         return f"    {target}.copy_({operands[0]}.broadcast_to({sizes}))"

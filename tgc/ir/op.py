@@ -111,6 +111,12 @@ MEAN = Op(name="mean", category=REDUCTION)
 
 MATMUL = Op(name="matmul", category=CONTRACTION, arity=2)
 
+# Joining two tensors along an axis and taking a window out of one. Neither is a view in the
+# strict sense, since both move data, and both live here because the shape rules are the same
+# kind of rule and a pass that reasons about layout has to reason about them together.
+CONCAT = Op(name="concat", category=VIEW, arity=2)
+SLICE = Op(name="slice", category=VIEW)
+
 RESHAPE = Op(name="reshape", category=VIEW)
 TRANSPOSE = Op(name="transpose", category=VIEW)
 BROADCAST_TO = Op(name="broadcast_to", category=VIEW)
@@ -146,6 +152,8 @@ ALL_OPS = (
     RESHAPE,
     TRANSPOSE,
     BROADCAST_TO,
+    CONCAT,
+    SLICE,
     INPUT,
     CONSTANT,
     PRINT,
@@ -212,6 +220,8 @@ COSTS: dict[str, OpCost] = {
     "mean": OpCost(flops_per_element=1.0),
     "max": OpCost(flops_per_element=1.0),
     "matmul": OpCost(flops_per_element=2.0),
+    "concat": OpCost(flops_per_element=0.0),
+    "slice": OpCost(flops_per_element=0.0),
 }
 
 

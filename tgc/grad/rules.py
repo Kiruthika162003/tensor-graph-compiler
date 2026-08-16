@@ -324,6 +324,44 @@ def _grad_broadcast(builder: Builder, context: Context) -> list[str | None]:
     return [sum_to_shape(builder, grad, _shape_of(builder, grad), context.shape(0))]
 
 
+def _grad_concat(builder: Builder, context: Context) -> list[str | None]:
+    # A join splits going backwards. Each operand receives the window of the cotangent that
+    # came from it, which is the only rule in this file that is a pure bookkeeping operation
+    # with no arithmetic in it at all.
+    axis = int(context.attrs["axis"])
+    left = static_sizes(context.shape(0))[axis]
+    right = static_sizes(context.shape(1))[axis]
+    return [
+        builder.slice(context.cotangent, axis, 0, left),
+        builder.slice(context.cotangent, axis, left, right),
+    ]
+
+
+def _grad_slice(builder: Builder, context: Context) -> list[str | None]:
+    # A window pads going backwards. Everything outside the window contributed nothing, so its
+    # gradient is zero, and the zeros have to be built rather than assumed because the operand
+    # is larger than the cotangent and nothing else in the graph has its shape.
+    axis = int(context.attrs["axis"])
+    start = int(context.attrs["start"])
+    length = int(context.attrs["length"])
+    sizes = static_sizes(context.shape(0))
+    dtype = context.node.output.dtype
+
+    current = context.cotangent
+    if start:
+        before = list(sizes)
+        before[axis] = start
+        zeros = builder.broadcast_to(builder.constant(0.0, dtype=dtype), before)
+        current = builder.concat(zeros, current, axis)
+    trailing = sizes[axis] - start - length
+    if trailing:
+        after = list(sizes)
+        after[axis] = trailing
+        zeros = builder.broadcast_to(builder.constant(0.0, dtype=dtype), after)
+        current = builder.concat(current, zeros, axis)
+    return [current]
+
+
 def _grad_identity(_builder: Builder, context: Context) -> list[str | None]:
     return [context.cotangent]
 
@@ -351,6 +389,8 @@ RULES: dict[str, GradRule] = {
     "transpose": _grad_transpose,
     "reshape": _grad_reshape,
     "broadcast_to": _grad_broadcast,
+    "concat": _grad_concat,
+    "slice": _grad_slice,
     "print": _grad_identity,
     "assert_finite": _grad_identity,
 }

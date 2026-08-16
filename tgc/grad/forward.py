@@ -152,6 +152,47 @@ def _tangent_max(
     return builder.sum(builder.mul(mask, tangents[0]), axes=axes, keepdims=keepdims)
 
 
+def _tangent_choice(
+    builder: Builder, node: Node, values: list[str], tangents: list[str]
+) -> str:
+    """The tangent of a maximum or a minimum, which follows whichever operand won."""
+    picked_left = values[0] if node.op.name == "maximum" else values[1]
+    picked_right = values[1] if node.op.name == "maximum" else values[0]
+    one = builder.constant(1.0, dtype=node.output.dtype)
+    picked = builder.step(builder.sub(picked_left, picked_right))
+    return builder.add(
+        builder.mul(tangents[0], picked),
+        builder.mul(tangents[1], builder.sub(one, picked)),
+    )
+
+
+def _tangent_layout(builder: Builder, node: Node, tangents: list[str]) -> str:
+    """The tangent of anything that moves data without changing it.
+
+    Every operation in the view category, handled by the category rather than one name at a
+    time. They all rearrange elements and none of them touches a value, so the tangent goes
+    through exactly the same rearrangement, and writing that once means an op added to the
+    category later gets a forward rule for free.
+    """
+    name = node.op.name
+    if name == "reshape":
+        return builder.reshape(tangents[0], [int(size) for size in node.attrs["sizes"]])
+    if name == "transpose":
+        return builder.transpose(tangents[0], [int(axis) for axis in node.attrs["permutation"]])
+    if name == "broadcast_to":
+        return builder.broadcast_to(tangents[0], static_sizes(node.output.shape))
+    if name == "concat":
+        return builder.concat(tangents[0], tangents[1], int(node.attrs["axis"]))
+    if name == "slice":
+        return builder.slice(
+            tangents[0],
+            int(node.attrs["axis"]),
+            int(node.attrs["start"]),
+            int(node.attrs["length"]),
+        )
+    raise PassError(f"no forward rule for the view {name}")
+
+
 def tangent_of(
     builder: Builder, node: Node, values: list[str], tangents: list[str], output: str
 ) -> str:
@@ -172,13 +213,7 @@ def tangent_of(
             builder.sub(tangents[0], builder.mul(output, tangents[1])), values[1]
         )
     if name in ("maximum", "minimum"):
-        left, right = (values[0], values[1]) if name == "maximum" else (values[1], values[0])
-        one = builder.constant(1.0, dtype=node.output.dtype)
-        picked = builder.step(builder.sub(left, right))
-        return builder.add(
-            builder.mul(tangents[0], picked),
-            builder.mul(tangents[1], builder.sub(one, picked)),
-        )
+        return _tangent_choice(builder, node, values, tangents)
     if name == "matmul":
         return builder.add(
             builder.matmul(tangents[0], values[1]), builder.matmul(values[0], tangents[1])
@@ -192,12 +227,8 @@ def tangent_of(
         )
     if name == "max":
         return _tangent_max(builder, node, values, tangents, output)
-    if name == "reshape":
-        return builder.reshape(tangents[0], [int(size) for size in node.attrs["sizes"]])
-    if name == "transpose":
-        return builder.transpose(tangents[0], [int(axis) for axis in node.attrs["permutation"]])
-    if name == "broadcast_to":
-        return builder.broadcast_to(tangents[0], static_sizes(node.output.shape))
+    if node.op.category == ops.VIEW:
+        return _tangent_layout(builder, node, tangents)
     if name in ("print", "assert_finite"):
         return tangents[0]
     return _tangent_elementwise(builder, node, values, tangents, output)

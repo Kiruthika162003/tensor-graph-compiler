@@ -7,8 +7,11 @@ from tgc.errors import ConfigError, GraphError, TypeInferenceError
 from tgc.ir import op as ops
 from tgc.ir.dtype import BOOL, FLOAT32, DType, accumulator_for, promote_all
 from tgc.ir.shape import (
+    Dim,
     Shape,
     broadcast_all,
+    dim,
+    dims_equal,
     matmul_shape,
     reduce_shape,
     reshape_shape,
@@ -312,7 +315,75 @@ def _infer_view(op: ops.Op, operands: Sequence[Value], attrs: dict, name: str) -
         if not isinstance(target, Shape):
             raise TypeInferenceError("a broadcast needs a target shape")
         return Value(name=name, shape=broadcast_all([source.shape, target]), dtype=source.dtype)
+    if op is ops.CONCAT:
+        return _infer_concat(operands, attrs, name)
+    if op is ops.SLICE:
+        return _infer_slice(source, attrs, name)
     raise TypeInferenceError(f"no view rule for {op}")
+
+
+def _infer_concat(operands: Sequence[Value], attrs: dict, name: str) -> Value:
+    """Output type of a join along one axis.
+
+    Every axis but the joined one has to match exactly, including symbolically. Two operands
+    whose joined axis is a named dimension are allowed and produce a named dimension, because
+    the sum of two unknowns is an unknown and refusing it would rule out any batching over a
+    dynamic size.
+    """
+    left, right = operands
+    axis = attrs.get("axis")
+    if axis is None:
+        raise TypeInferenceError("a concat needs an axis")
+    axis = int(axis)
+    if left.shape.rank != right.shape.rank:
+        raise TypeInferenceError(
+            f"cannot join rank {left.shape.rank} to rank {right.shape.rank}"
+        )
+    if not 0 <= axis < left.shape.rank:
+        raise TypeInferenceError(f"axis {axis} is outside a rank {left.shape.rank} shape")
+
+    sizes: list[Dim] = []
+    for position in range(left.shape.rank):
+        here = left.shape.sizes[position]
+        there = right.shape.sizes[position]
+        if position == axis:
+            if here.is_static and there.is_static:
+                sizes.append(dim(here.value + there.value))
+            else:
+                sizes.append(dim(f"{here}+{there}"))
+            continue
+        if not dims_equal(here, there):
+            raise TypeInferenceError(
+                f"a join along axis {axis} needs axis {position} to match, "
+                f"got {here} and {there}"
+            )
+        sizes.append(here)
+    return Value(
+        name=name, shape=Shape(sizes=tuple(sizes)), dtype=promote_all([left.dtype, right.dtype])
+    )
+
+
+def _infer_slice(source: Value, attrs: dict, name: str) -> Value:
+    """Output type of a window taken out of one axis."""
+    axis = attrs.get("axis")
+    start = attrs.get("start")
+    length = attrs.get("length")
+    if axis is None or start is None or length is None:
+        raise TypeInferenceError("a slice needs an axis, a start and a length")
+    axis, start, length = int(axis), int(start), int(length)
+    if not 0 <= axis < source.shape.rank:
+        raise TypeInferenceError(f"axis {axis} is outside a rank {source.shape.rank} shape")
+    if start < 0 or length < 1:
+        raise TypeInferenceError(f"a window of {length} at {start} is not a window")
+
+    size = source.shape.sizes[axis]
+    if size.is_static and start + length > size.value:
+        raise TypeInferenceError(
+            f"a window of {length} at {start} runs off an axis of {size.value}"
+        )
+    sizes = list(source.shape.sizes)
+    sizes[axis] = dim(length)
+    return Value(name=name, shape=Shape(sizes=tuple(sizes)), dtype=source.dtype)
 
 
 def topological_order(graph: Graph) -> list[Node]:
